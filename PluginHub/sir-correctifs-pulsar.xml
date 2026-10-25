@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pulsar sheet of Sir Correctifs Pulsar: it carries the name Pulsar shows in
+  its plugin list (FriendlyName). Pulsar does not read it from this
+  repository: the studio copies it to the Sirius catalog at every release,
+  with the published commit in Commit. SourceDirectories limits the
+  compilation to the Source folder, without the tests.
+-->
+<PluginData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="GitHubPlugin">
+  <Id>RougeSable/sir-correctifs-pulsar</Id>
+  <FriendlyName>Sir Correctifs Pulsar</FriendlyName>
+  <Author>RougeSable</Author>
+  <Tooltip>Drive rovers and ships with rotors, pistons or hinges without waiting for the server.</Tooltip>
+  <Description>Sir Correctifs Pulsar turns on, on your machine only, two predictions Space Engineers already has but keeps off. Wheeled vehicle prediction: the rover you drive and each of its wheels are simulated on your machine, so it answers your keys at once. Mechanical blocks prediction: a ship that carries a rotor, a piston or a hinge is simulated on your machine when you pilot it, its attached parts with it. Each setting is turned on or off separately in the plugin settings; both are on by default. Nothing is sent to the server and nothing changes on it: players without the plugin play as usual. The game's own safeguards stay in place: when the server's corrections pile up, the game goes back to server driven movement by itself.</Description>
+  <Commit>0000000000000000000000000000000000000000</Commit>
+  <SourceDirectories>
+    <Directory>Source</Directory>
+  </SourceDirectories>
+</PluginData>
