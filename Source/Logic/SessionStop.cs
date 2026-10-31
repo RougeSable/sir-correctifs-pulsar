@@ -17,13 +17,22 @@ namespace SirCorrectifsPulsar
     public sealed class SessionStop
     {
         private readonly Action<string> m_log;
+        private readonly Action<string, Exception> m_logException;
         private readonly ConcurrentQueue<string> m_notifications = new ConcurrentQueue<string>();
         private int m_stopped;
         private volatile string m_reason;
 
         public SessionStop(Action<string> log)
+            : this(log, null)
+        {
+        }
+
+        // log: an error line in the game log (and an error report);
+        // logException: the same for a caught exception, with its stack.
+        public SessionStop(Action<string> log, Action<string, Exception> logException)
         {
             m_log = log ?? (_ => { });
+            m_logException = logException ?? ((detail, e) => m_log(detail + ": " + e));
         }
 
         public bool IsStopped
@@ -48,6 +57,25 @@ namespace SirCorrectifsPulsar
             m_log(detailForTheLog);
             m_notifications.Enqueue(messageForThePlayer);
             return true;
+        }
+
+        // The same, for a caught exception: the log line carries its stack.
+        public bool Stop(string detailForTheLog, Exception exception, string messageForThePlayer)
+        {
+            if (Interlocked.Exchange(ref m_stopped, 1) != 0)
+                return false;
+
+            m_reason = messageForThePlayer;
+            m_logException(detailForTheLog, exception);
+            m_notifications.Enqueue(messageForThePlayer);
+            return true;
+        }
+
+        // A name the plugin patches or reads is missing from the game: the
+        // game has changed under it.
+        public bool MissingGameName(string name)
+        {
+            return Stop("unexpected game, not found: " + name, Texts.StopUnexpectedGame);
         }
 
         // Delivers what is waiting, but only while a game is open: in the main

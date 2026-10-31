@@ -25,8 +25,10 @@ turns them on, on the player's machine only.
 
 Also:
 
-- Nothing changes on the server, and nothing is sent to it. A player without
-  the plugin plays as usual, on the same server, with the same vehicles.
+- Nothing changes on the server. The only thing the plugin sends to it is its
+  own error reports, and only on Sirius servers (see "Error reports"). A
+  player without the plugin plays as usual, on the same server, with the same
+  vehicles.
 - The plugin only acts in a multiplayer game joined as a client. In a single
   player game, or in a game you host, the game is left as it is.
 - The game's safeguards stay in place, for rovers too: the server can still
@@ -112,13 +114,70 @@ patched method must ask its question exactly once (its compiled body is read
 before patching, `MethodCalls`). A missing name, an
 unexpected method, or a fault while the game decides a prediction stops the
 plugin for the whole session (`SessionStop`): the game gets its own switches
-and behavior back, a `[sir-correctifs-pulsar]` line goes to the game log, and
-the player gets a notification as soon as a game is open.
+and behavior back, a `[sir-correctifs-pulsar] ERROR` line goes to the game log
+(and becomes an error report, see below), and the player gets a notification
+as soon as a game is open.
 
 Two plugins never fight over the same step. Before hooking in, then every ten
 seconds, the plugin looks at who is hooked on `MyCubeGrid.UpdatePredictionFlag`
 (`Harmony.GetPatchInfo`). If it finds another owner, it steps aside and tells
 the player.
+
+## Error reports
+
+When the plugin fails, the studio hears about it, without anything about the
+player. This follows the studio's rule for client plugins ("error reports").
+
+- **Errors.** Every exception the plugin catches and every error line it
+  writes to the game log (`[sir-correctifs-pulsar] ERROR ...`) gives an
+  `erreur` report, a patch whose method is missing from the game included.
+  The same error (same message, same top of the stack) leaves once per game
+  session, with its count and its first and last times: when it has been
+  quiet for 30 seconds, or at the latest 5 minutes after it first appeared.
+  Whatever still waits when the game closes is kept for later.
+- **Crashes.** While the game runs, a mark sits in the plugin's folder
+  (`session.marker`); a clean exit erases it. Found at the next start, it
+  means the previous session crashed: the plugin reads that session's game
+  log again (`%AppData%\SpaceEngineers\SpaceEngineers_*.log`) and makes a
+  `plantage` report with the game's CRASH INFO block, the exception that
+  brought the game down and its stack, the game's last 20 error lines before
+  the crash and the plugin's last 20 lines.
+- **Nothing about the player.** Every line is cleaned before it is kept: a
+  line that carries a Steam id, a player name, a grid name or a server
+  address is removed, and the Windows user folder becomes `%USERPROFILE%`.
+  Besides fixed patterns (long numbers, addresses, "Player entered:",
+  "Name: ..."), the plugin learns the values to hide from the game (the
+  player's name and Steam id, the world and server names) and from the log
+  itself, where the game writes them in fixed lines.
+- **Only on our servers.** Reports wait in
+  `%AppData%\SpaceEngineers\Storage\sir-correctifs-pulsar\reports`, at most
+  100 of them, one JSON file each. They leave, oldest first, only on PU or
+  PTU, which the plugin recognizes on its own, without asking the server: a
+  dedicated server joined as a client whose world loads the studio's own
+  mods (once the game is loaded, one of their blocks or items is among the
+  game's definitions: the "Contrats SIRIUS" block, the mission blocks, the
+  reinforcement beacons, and so on; the list is `OurServer.Markers`). On any
+  other server, in single player or in a hosted game, nothing leaves;
+  reports wait for the next connection to PU or PTU.
+- **Never a fault for the game.** Writing, reading or sending a report never
+  throws: a failure is swallowed, the report is kept or dropped, the game
+  goes on. After three failed sends in a row, the queue waits for the next
+  connection.
+
+What is sent, by `MyAPIGateway.Multiplayer.SendMessageToServer`, reliable: a
+UTF-8 JSON object, without a byte order mark:
+
+    {"greffon":"Sir Correctifs Pulsar","version":"1.1.0.0","genre":"erreur",
+     "message":"...","pile":"   at ...\n   at ...",
+     "premiere":"2026-10-28T09:00:00.000Z","derniere":"2026-10-28T09:00:10.000Z",
+     "nombre":3,"session":"2026-10-28T08:55:12.345Z","lignes":["..."]}
+
+`genre` is `erreur` or `plantage`, times are UTC, `session` is when the game
+session concerned started, `version` is the assembly's, `lignes` are game log
+lines. The rule names the channel 5465479001, but the game's network channels
+are 16 bits wide: reports travel on network channel **46479**, the one the
+studio's server plugin (Sir Studio Torch) listens to on PU and PTU. The plugin
+only sends on it; it listens to nothing.
 
 ## Trial before a release
 
@@ -146,8 +205,11 @@ location, see `Directory.Build.props.example`.
 
 The tests cover the pure logic (`Source/Logic`): the settings and their file,
 the rule for attached grids, the switching of the game's switches, the
-reading of a compiled method body, session stops and coexistence. They need
-neither the game nor Pulsar.
+reading of a compiled method body, session stops and coexistence, and the
+error reports (their JSON, the count per session, the crash report read from
+a game log, the cleaning of player data, the queue and the server gate).
+`tests/Data` holds a game log in the exact shape the game writes it, with a
+GPU crash. They need neither the game nor Pulsar.
 
 This repository evolves through tickets in the sir-studio3 studio: `main`
 carries the work accepted in qualification, `qualification` the work still

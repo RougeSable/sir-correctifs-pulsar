@@ -359,7 +359,7 @@ namespace SirCorrectifsPulsar
                 }
                 catch (Exception e)
                 {
-                    SirCorrectifsPulsarPlugin.Log("constraints of grid " + grid.EntityId + " not updated: " + e.Message);
+                    SirCorrectifsPulsarPlugin.LogError("constraints of a grid not updated", e);
                 }
             }
         }
@@ -399,7 +399,7 @@ namespace SirCorrectifsPulsar
             }
             catch (Exception e)
             {
-                SirCorrectifsPulsarPlugin.Log("prediction of grid " + grid.EntityId + " not recomputed: " + e.Message);
+                SirCorrectifsPulsarPlugin.LogError("prediction of a grid not recomputed", e);
             }
         }
 
@@ -409,7 +409,7 @@ namespace SirCorrectifsPulsar
             Set(false, false);
             var stop = Stop;
             if (stop != null)
-                stop.Stop("fault while the game decided a prediction: " + e, Texts.StopFault);
+                stop.Stop("fault while the game decided a prediction", e, Texts.StopFault);
         }
     }
 }

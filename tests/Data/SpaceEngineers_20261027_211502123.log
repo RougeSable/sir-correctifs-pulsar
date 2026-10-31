@@ -1,0 +1,105 @@
+2026-10-27 21:15:02.123 - Thread:   1 ->  Log Started
+2026-10-27 21:15:02.124 - Thread:   1 ->  Timezone (local - UTC): 1h
+2026-10-27 21:15:02.125 - Thread:   1 ->  App Version: 01.205.026 b0
+2026-10-27 21:15:02.130 - Thread:   1 ->  Is official: True [O][IS][NAMP]
+2026-10-27 21:15:02.131 - Thread:   1 ->  Branch / Sandbox: default
+2026-10-27 21:15:02.131 - Thread:   1 ->  Client Build Number: 1205026
+2026-10-27 21:15:02.131 - Thread:   1 ->  Server Build Number: 1205026
+2026-10-27 21:15:02.132 - Thread:   1 ->  Environment.ProcessorCount: 16
+2026-10-27 21:15:02.132 - Thread:   1 ->  Environment.OSVersion: Microsoft Windows 10 Pro
+2026-10-27 21:15:02.132 - Thread:   1 ->  Environment.CommandLine: "C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64\SpaceEngineers.exe" -plugin "C:\Users\rsable\AppData\Roaming\Pulsar\Legacy\loader.dll"
+2026-10-27 21:15:02.133 - Thread:   1 ->  Environment.Is64BitProcess: True
+2026-10-27 21:15:02.133 - Thread:   1 ->  Environment.Is64BitOperatingSystem: True
+2026-10-27 21:15:02.133 - Thread:   1 ->  Environment.Version: .NET Framework 4.8.9290.0
+2026-10-27 21:15:02.133 - Thread:   1 ->  Environment.CurrentDirectory: C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64
+2026-10-27 21:15:02.135 - Thread:   1 ->  CPU Info: AMD Ryzen 7 5800X 8-Core Processor
+2026-10-27 21:15:02.136 - Thread:   1 ->  Default Culture: fr-FR
+2026-10-27 21:15:02.136 - Thread:   1 ->  Default UI Culture: fr-FR
+2026-10-27 21:15:02.410 - Thread:   1 ->  Steam.IsSubscribedApp: True
+2026-10-27 21:15:02.411 - Thread:   1 ->  Service.UserId: 76561198012345678
+2026-10-27 21:15:02.411 - Thread:   1 ->  Service.UserName: RougeSable
+2026-10-27 21:15:02.520 - Thread:   1 ->  Using OnlineUserId as AnalyticsUserId "76561198012345678"
+2026-10-27 21:15:02.800 - Thread:   1 ->  Config file: C:\Users\rsable\AppData\Roaming\SpaceEngineers\SpaceEngineers.cfg
+2026-10-27 21:15:03.010 - Thread:   1 ->  Render.GrassDensityFactor: 1
+2026-10-27 21:15:03.010 - Thread:   1 ->  Render.AntialiasingMode: FXAA
+2026-10-27 21:15:03.011 - Thread:   1 ->  Render.ShadowQuality: HIGH
+2026-10-27 21:15:03.400 - Thread:   1 ->  Plugin Init: SirCorrectifsPulsar.SirCorrectifsPulsarPlugin
+2026-10-27 21:15:03.401 - Thread:   1 ->  [sir-correctifs-pulsar] loaded, wheeled vehicle prediction on, mechanical blocks prediction on
+2026-10-27 21:15:03.402 - Thread:   1 ->  [sir-correctifs-pulsar] hooked on MyCubeGrid.UpdatePredictionFlag
+2026-10-27 21:15:03.410 - Thread:   1 ->  Plugin Init: SirHolomap.HolomapPlugin
+2026-10-27 21:15:04.002 - Thread:   1 ->  Error: checksum of file 'Content\Data\Audio.sbc' failed 4a1f0c2e
+2026-10-27 21:15:04.003 - Thread:   1 ->  Error: no checksum found for file 'Content\Data\Localization\MyTexts.de.resx'
+2026-10-27 21:15:05.230 - Thread:   1 ->  Error: localization key 'Block_SiriusRelay' missing
+2026-10-27 21:15:06.512 - Thread:   1 ->  MySteamWorkshop.GetSubscribedModsBlocking - START
+2026-10-27 21:15:06.990 - Thread:   1 ->  MySteamWorkshop.GetSubscribedModsBlocking - END
+2026-10-27 21:16:40.031 - Thread:   1 ->  Joining server: Name:Sirius Immersion PTU ConnectionString:steam://203.0.113.24:27016
+2026-10-27 21:16:40.540 - Thread:   1 ->  Lobby join response: Success, enter state: Success
+2026-10-27 21:16:41.002 - Thread:   1 ->  World requested
+2026-10-27 21:16:52.115 - Thread:   1 ->  Loading session: C:\Users\rsable\AppData\Roaming\SpaceEngineers\Temp\76561198012345678\Sirius Immersion PTU
+2026-10-27 21:16:58.720 - Thread:   1 ->  Error loading spawn group Sirius Pirate Corvette
+2026-10-27 21:16:59.301 - Thread:   1 ->  Exception occurred: System.IO.FileNotFoundException: Could not find file 'C:\Users\rsable\AppData\Roaming\SpaceEngineers\Storage\2878263187.sbm_RadarMod\settings.xml'.
+   at System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)
+   at System.IO.FileStream.Init(String path, FileMode mode, FileAccess access)
+2026-10-27 21:17:03.881 - Thread:   1 ->  Session loaded
+2026-10-27 21:17:04.002 - Thread:   1 ->  Player entered: Kestrel_77 (76561198087654321)
+2026-10-27 21:17:04.003 - Thread:   1 ->  Player entered: RougeSable (76561198012345678)
+2026-10-27 21:17:04.410 - Thread:   1 ->  [sir-correctifs-pulsar] wheeled vehicle prediction on, mechanical blocks prediction on
+2026-10-27 21:17:05.100 - Thread:   1 ->  CreateCompressedMsg: Type: MyObjectBuilder_CubeGrid  Name: Iron Heron  EntityID: 7A1C33F0
+2026-10-27 21:17:05.230 - Thread:   1 ->  Error: [RadarMod] target lost on Iron Heron, retrying
+2026-10-27 21:17:06.002 - Thread:  14 ->  Error: MyCubeBlock with EntityId 101532748263918544 has no definition
+2026-10-27 21:17:06.900 - Thread:   1 ->  Error: sound cue 'ArcWepShipGatlingShot' not found
+2026-10-27 21:17:07.101 - Thread:   1 ->  Error: sound cue 'ArcWepShipGatlingShot' not found
+2026-10-27 21:17:07.900 - Thread:   1 ->  Failed to load texture Textures\GUI\Icons\Cubes\SiriusContracts.dds
+2026-10-27 21:17:08.010 - Thread:   1 ->  Error: Kestrel_77 tried to build outside the safe zone
+2026-10-27 21:17:08.300 - Thread:   1 ->  MyEntities.Load error: model Models\Cubes\Large\SiriusRelay.mwm missing
+2026-10-27 21:17:09.120 - Thread:   1 ->  Failed to load texture Textures\Models\Cubes\SiriusRelay_cm.dds
+2026-10-27 21:17:10.441 - Thread:   1 ->  Error: Grid 'Iron Heron' exceeded block limit
+2026-10-27 21:17:11.002 - Thread:   1 ->  Error: voxel material 'IceSirius' unknown
+2026-10-27 21:17:12.007 - Thread:   1 ->  Error: render message queue full, dropping 12 messages
+2026-10-27 21:17:13.006 - Thread:   1 ->  Error: render message queue full, dropping 7 messages
+2026-10-27 21:17:14.210 - Thread:   1 ->  Error: player identity 144115188075855873 not found
+2026-10-27 21:17:15.300 - Thread:   1 ->  Error: shader cache miss for Postprocess/Tonemapping/Main.hlsl
+2026-10-27 21:17:16.440 - Thread:   1 ->  Error: shader cache miss for Postprocess/Bloom/Downscale.hlsl
+2026-10-27 21:17:17.001 - Thread:   1 ->  Error: connection to 203.0.113.24:27016 lagging, 812 ms
+2026-10-27 21:17:18.552 - Thread:   1 ->  Error: Steam user RougeSable lost voice channel
+2026-10-27 21:17:20.002 - Thread:   1 ->  Error: GPU timestamp query timed out
+2026-10-27 21:17:21.120 - Thread:   1 ->  Error: GPU timestamp query timed out
+2026-10-27 21:17:22.230 - Thread:   1 ->  Error: GPU timestamp query timed out
+2026-10-27 21:17:23.340 - Thread:   1 ->  Error: present call returned DXGI_STATUS_OCCLUDED
+2026-10-27 21:17:24.450 - Thread:   1 ->  Error: GPU timestamp query timed out
+2026-10-27 21:17:25.560 - Thread:   1 ->  Error: render frame took 15012 ms
+2026-10-27 21:17:25.561 - Thread:   1 ->  [sir-correctifs-pulsar] ERROR constraints of a grid not updated: Object reference not set to an instance of an object.
+2026-10-27 21:17:25.700 - Thread:   1 ->  Exception occurred: SharpDX.SharpDXException: HRESULT: [0x887A0005], Module: [SharpDX.DXGI], ApiCode: [DXGI_ERROR_DEVICE_REMOVED/DeviceRemoved], Message: The GPU device instance has been suspended.
+   at SharpDX.Result.CheckError()
+   at SharpDX.DXGI.SwapChain.TryPresent(Int32 syncInterval, PresentFlags flags)
+   at VRage.Render11.Common.MyPlatformRender.Present(Boolean syncInterval)
+   at VRageRender.MyRender11.Present()
+   at VRageRender.MyRender11.DrawScene()
+   at VRage.Render11.Common.MyRenderThread.RenderFrame()
+2026-10-27 21:17:25.702 - Thread:   1 ->  Showing message
+2026-10-27 21:17:25.703 - Thread:   1 ->  MyInitializer.OnCrash
+2026-10-27 21:17:25.703 - Thread:   1 ->  var exception = SharpDX.SharpDXException: HRESULT: [0x887A0005], Module: [SharpDX.DXGI], ApiCode: [DXGI_ERROR_DEVICE_REMOVED/DeviceRemoved], Message: The GPU device instance has been suspended.
+   at SharpDX.Result.CheckError()
+   at SharpDX.DXGI.SwapChain.TryPresent(Int32 syncInterval, PresentFlags flags)
+   at VRage.Render11.Common.MyPlatformRender.Present(Boolean syncInterval)
+   at VRageRender.MyRender11.Present()
+   at VRageRender.MyRender11.DrawScene()
+   at VRage.Render11.Common.MyRenderThread.RenderFrame()
+2026-10-27 21:17:25.720 - Thread:   1 ->
+================================== CRASH INFO ==================================
+AppVersion: 1.205.026
+GameName: SpaceEngineers
+IsOutOfMemory: False
+IsGPU: True
+IsNative: False
+IsTask: False
+IsExperimental: False
+ProcessRunTime: 143
+PCUCount: 18240
+IsHang: False
+GCMemory: 3221225472
+GCMemoryAllocated: 3758096384
+HWAvailableMemory: 9663676416
+ProcessPrivateMemory: 12884901888
+AnalyticId: 76561198012345678
+================================== OFNI HSARC ==================================

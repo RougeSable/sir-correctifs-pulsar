@@ -24,7 +24,7 @@ namespace SirCorrectifsPulsar
             "A ship that carries a rotor, a piston or a hinge is simulated on your machine when you pilot it, "
             + "its attached parts with it. Unchecked: the game's own behavior.";
 
-        public const string ScreenOnlyAsClient = "Applies in multiplayer games joined as a client. Nothing is sent to the server.";
+        public const string ScreenOnlyAsClient = "Applies in multiplayer games joined as a client. Only error reports go to Sirius servers.";
         public const string ScreenStopped = "Stopped for this session, see the game log.";
         public const string CloseButton = "Close";
     }

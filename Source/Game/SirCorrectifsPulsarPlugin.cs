@@ -14,8 +14,8 @@ namespace SirCorrectifsPulsar
     // Sir Correctifs Pulsar, a client-side plugin loaded by Pulsar. It turns
     // on, on the player's machine only, two predictions the game already has
     // but keeps off: wheeled vehicles, and ships that carry rotors, pistons or
-    // hinges. Nothing goes through the server; a player without the plugin
-    // plays as usual.
+    // hinges. A player without the plugin plays as usual. Its only exchange
+    // with the server is its error reports, on our servers only (Reporting).
     public class SirCorrectifsPulsarPlugin : IPlugin
     {
         public const string Id = "sir-correctifs-pulsar";
@@ -24,7 +24,10 @@ namespace SirCorrectifsPulsar
         // game's prediction choice after us (60 per second).
         private const int CoexistenceInterval = 600;
 
+        private static readonly PluginLog s_log = new PluginLog(Id, text => MyLog.Default.WriteLine(text));
+
         private Harmony m_harmony;
+        private Reporting m_reporting;
         private GameNames m_names;
         private SessionStop m_stop;
         private GameSwitch m_carPrediction;
@@ -48,22 +51,44 @@ namespace SirCorrectifsPulsar
 
         public static void Log(string text)
         {
-            MyLog.Default.WriteLine("[" + Id + "] " + text);
+            s_log.Info(text);
+        }
+
+        // An error line in the game log, which also becomes an error report.
+        public static void LogError(string text)
+        {
+            s_log.Error(text);
+        }
+
+        // A caught exception, written with its stack and reported.
+        public static void LogError(string context, Exception exception)
+        {
+            s_log.Error(context, exception);
+        }
+
+        public static string Version
+        {
+            get { return typeof(SirCorrectifsPulsarPlugin).Assembly.GetName().Version.ToString(); }
         }
 
         public void Init(object gameInstance)
         {
             Instance = this;
-            m_stop = new SessionStop(Log);
-            PredictionPatch.Stop = m_stop;
 
             // The player's settings folder: %AppData%\SpaceEngineers\Storage\sir-correctifs-pulsar
             m_settingsDirectory = Path.Combine(MyFileSystem.UserDataPath, "Storage", Id);
 
+            // First, so that whatever fails next is reported.
+            m_reporting = new Reporting(s_log, m_settingsDirectory, Version);
+            m_reporting.Start();
+
+            m_stop = new SessionStop(LogError, LogError);
+            PredictionPatch.Stop = m_stop;
+
             string problem;
             m_settings = SettingsFile.Load(m_settingsDirectory, out problem);
             if (problem != null)
-                Log(problem + "; using the defaults");
+                LogError(problem + "; using the defaults");
 
             Log("loaded, wheeled vehicle prediction " + OnOff(m_settings.WheeledVehiclePrediction)
                 + ", mechanical blocks prediction " + OnOff(m_settings.MechanicalBlocksPrediction));
@@ -74,7 +99,7 @@ namespace SirCorrectifsPulsar
             }
             catch (Exception e)
             {
-                m_stop.Stop("preparation failed: " + e, Texts.StopPatch);
+                m_stop.Stop("preparation failed", e, Texts.StopPatch);
             }
         }
 
@@ -89,7 +114,7 @@ namespace SirCorrectifsPulsar
             m_names = GameNames.Resolve(out missing);
             if (m_names == null)
             {
-                m_stop.Stop("unexpected game, not found: " + missing, Texts.StopUnexpectedGame);
+                m_stop.MissingGameName(missing);
                 return;
             }
             PredictionPatch.Names = m_names;
@@ -139,6 +164,10 @@ namespace SirCorrectifsPulsar
 
         public void Update()
         {
+            // Apart, so that a fault of the reports never touches the rest.
+            if (m_reporting != null)
+                m_reporting.Update();
+
             try
             {
                 var gameOpen = MySession.Static != null && MyAPIGateway.Utilities != null;
@@ -156,7 +185,7 @@ namespace SirCorrectifsPulsar
             {
                 // A failure here must never bring the game down.
                 PredictionPatch.Set(false, false);
-                m_stop.Stop("fault on the main thread: " + e, Texts.StopFault);
+                m_stop.Stop("fault on the main thread", e, Texts.StopFault);
             }
         }
 
@@ -211,7 +240,7 @@ namespace SirCorrectifsPulsar
             }
             catch (Exception e)
             {
-                Log("settings not saved: " + e.Message);
+                LogError("settings not saved", e);
             }
         }
 
@@ -237,8 +266,12 @@ namespace SirCorrectifsPulsar
             }
             catch (Exception e)
             {
-                Log("incomplete shutdown: " + e.Message);
+                LogError("incomplete shutdown", e);
             }
+
+            // Last: the clean exit erases the session mark.
+            if (m_reporting != null)
+                m_reporting.Stop();
             Instance = null;
         }
     }
