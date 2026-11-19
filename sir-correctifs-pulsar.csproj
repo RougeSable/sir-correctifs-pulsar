@@ -1,0 +1,67 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    // Sir Correctifs Pulsar, un greffon de Space Engineers qui tourne sur la
+    // machine du joueur (Pulsar). Pulsar compile lui-même le dossier Source ; ce
+    // projet sert aux constructions locales.
+
+    // Chemin du jeu : la valeur Bin64, sinon la variable SE_BIN64, sinon le jeu
+    // recopié à côté du dépôt (jeu-installe), sinon les emplacements Steam les
+    // plus courants. Pour un autre emplacement, copier
+    // Directory.Build.props.example en Directory.Build.props.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>sir-correctifs-pulsar</AssemblyName>
+    <RootNamespace>SirCorrectifsPulsar</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Bin64)' == ''">
+    <Bin64>$(SE_BIN64)</Bin64>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Bin64)' == ''">
+    <Bin64 Condition="Exists('$(MSBuildThisFileDirectory)jeu-installe/Bin64/Sandbox.Game.dll')">$(MSBuildThisFileDirectory)jeu-installe/Bin64</Bin64>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Bin64)' == ''">
+    <Bin64 Condition="Exists('C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64\Sandbox.Game.dll')">C:\Program Files (x86)\Steam\steamapps\common\SpaceEngineers\Bin64</Bin64>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Bin64)' == ''">
+    <Bin64 Condition="Exists('D:\SteamLibrary\steamapps\common\SpaceEngineers\Bin64\Sandbox.Game.dll')">D:\SteamLibrary\steamapps\common\SpaceEngineers\Bin64</Bin64>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Source\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Pulsar le fournit au jeu : il ne part pas avec le greffon. -->
+    <PackageReference Include="Lib.Harmony" Version="2.3.3" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Sandbox.Game"><HintPath>$(Bin64)\Sandbox.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Common"><HintPath>$(Bin64)\Sandbox.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Sandbox.Graphics"><HintPath>$(Bin64)\Sandbox.Graphics.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SpaceEngineers.Game"><HintPath>$(Bin64)\SpaceEngineers.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SpaceEngineers.ObjectBuilders"><HintPath>$(Bin64)\SpaceEngineers.ObjectBuilders.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage"><HintPath>$(Bin64)\VRage.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Game"><HintPath>$(Bin64)\VRage.Game.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Library"><HintPath>$(Bin64)\VRage.Library.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Math"><HintPath>$(Bin64)\VRage.Math.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Render"><HintPath>$(Bin64)\VRage.Render.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VRage.Input"><HintPath>$(Bin64)\VRage.Input.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="VerifierLeJeu" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(Bin64)\Sandbox.Game.dll')"
+           Text="Space Engineers est introuvable (Bin64 = '$(Bin64)'). Donner le chemin de Bin64 : dotnet build -p:Bin64=..., la variable SE_BIN64, ou Directory.Build.props (voir Directory.Build.props.example)." />
+  </Target>
+
+</Project>
