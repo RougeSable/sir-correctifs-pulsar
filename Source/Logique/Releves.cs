@@ -5,13 +5,15 @@ using System.Text;
 
 namespace SirCorrectifsPulsar
 {
-    // Les trois suivis du greffon. Chacun s'écrit chez Sir Correctifs Torch
-    // dans son propre dossier, un fichier par jour : minerai/, ecrans/, blocs/.
+    // Les suivis du greffon. Chacun s'écrit chez Sir Correctifs Torch dans
+    // son propre dossier, un fichier par jour : minerai/, ecrans/, blocs/ et
+    // blocs-du-fil/ (ce que chaque type de bloc coûte au fil du jeu).
     public enum Suivi
     {
         Minerai,
         Ecrans,
-        Blocs
+        Blocs,
+        BlocsDuFil
     }
 
     public static class NomsDesSuivis
@@ -24,6 +26,7 @@ namespace SirCorrectifsPulsar
             {
                 case Suivi.Minerai: return "minerai";
                 case Suivi.Ecrans: return "ecrans";
+                case Suivi.BlocsDuFil: return "blocs-du-fil";
                 default: return "blocs";
             }
         }

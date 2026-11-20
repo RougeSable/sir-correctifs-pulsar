@@ -10,7 +10,8 @@ namespace SirCorrectifsPulsar
     // Sir Correctifs Pulsar, un greffon côté joueur chargé par Pulsar. Il
     // relève chez le joueur volontaire l'apparition de ses marqueurs de
     // minerai, l'affichage de ses écrans et celui des blocs en chantier près
-    // de lui (blocs invisibles), et envoie ces relevés au serveur
+    // de lui (blocs invisibles), ce que chaque type de bloc coûte à son fil
+    // du jeu (blocs du fil), et envoie ces relevés au serveur
     // (PU ou PTU), où Sir Correctifs Torch les écrit. Il ne change rien au
     // jeu : il observe ce que le jeu calcule déjà.
     public class GreffonSirCorrectifsPulsar : IPlugin
@@ -41,6 +42,7 @@ namespace SirCorrectifsPulsar
                 AccrochesMinerai.Poser(m_harmony);
                 AccrochesEcrans.Poser(m_harmony);
                 AccrochesBlocs.Poser(m_harmony);
+                MesureDuFil.Poser(m_harmony);
                 var posees = 0;
                 foreach (var accroche in Accroches.Toutes)
                 {

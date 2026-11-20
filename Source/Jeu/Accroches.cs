@@ -16,6 +16,7 @@ namespace SirCorrectifsPulsar
         public Suivi Suivi;
         public bool Posee;
         public int Appels;
+        public MethodBase Methode;
 
         public void Compter()
         {
@@ -74,14 +75,24 @@ namespace SirCorrectifsPulsar
         public static Accroche Poser(Harmony harmony, Suivi suivi, string nom, Func<MethodBase> cible,
             string prefixe, string postfixe, Type porteur)
         {
+            return Poser(harmony, suivi, nom, cible, prefixe, postfixe, null, porteur);
+        }
+
+        // La même, avec une réécriture (transpiler) : elle ne sert qu'à faire
+        // passer un appel du jeu par le greffon, qui fait ce même appel.
+        public static Accroche Poser(Harmony harmony, Suivi suivi, string nom, Func<MethodBase> cible,
+            string prefixe, string postfixe, string reecriture, Type porteur)
+        {
             var accroche = new Accroche { Nom = nom, Suivi = suivi };
             s_toutes.Add(accroche);
             try
             {
                 var methode = cible();
+                accroche.Methode = methode;
                 harmony.Patch(methode,
                     prefix: prefixe == null ? null : new HarmonyMethod(AccessTools.Method(porteur, prefixe)),
-                    postfix: postfixe == null ? null : new HarmonyMethod(AccessTools.Method(porteur, postfixe)));
+                    postfix: postfixe == null ? null : new HarmonyMethod(AccessTools.Method(porteur, postfixe)),
+                    transpiler: reecriture == null ? null : new HarmonyMethod(AccessTools.Method(porteur, reecriture)));
                 accroche.Posee = true;
                 DireLesVoisins(methode, harmony.Id, nom);
             }
@@ -113,6 +124,21 @@ namespace SirCorrectifsPulsar
             {
                 Fautes.Noter("voisins d'une accroche", e);
             }
+        }
+
+        // Les autres greffons déjà accrochés à une méthode du jeu (Harmony).
+        public static List<string> AutresProprietaires(MethodBase methode, string nous)
+        {
+            var autres = new List<string>();
+            var info = Harmony.GetPatchInfo(methode);
+            if (info == null)
+                return autres;
+            foreach (var proprietaire in info.Owners)
+            {
+                if (proprietaire != nous && !autres.Contains(proprietaire))
+                    autres.Add(proprietaire);
+            }
+            return autres;
         }
 
         // Les accroches posées qui n'ont jamais été appelées, pour un suivi.

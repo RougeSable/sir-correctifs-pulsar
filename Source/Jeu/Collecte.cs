@@ -186,6 +186,7 @@ namespace SirCorrectifsPulsar
             ViderLesMesures();
             AccrochesEcrans.Vider();
             ViderLesLignesDesAutresFils();
+            MesureDuFil.Image();
 
             if (++s_compteur % 60 == 0)
                 ChaqueSeconde.Relever();
@@ -229,7 +230,8 @@ namespace SirCorrectifsPulsar
             Releveur.Noter(Suivi.Minerai, "partie prête", champs);
             Releveur.Noter(Suivi.Ecrans, "partie prête", champs);
             Releveur.Noter(Suivi.Blocs, "partie prête", champs);
-            GreffonSirCorrectifsPulsar.Journal.Info("partie prête : relevés du minerai, des écrans et des blocs en route vers le serveur");
+            GreffonSirCorrectifsPulsar.Journal.Info("partie prête : relevés du minerai, des écrans, des blocs et des blocs du fil en route vers le serveur");
+            MesureDuFil.Commencer();
 
             ChaqueSeconde.Relever();
         }
@@ -247,6 +249,7 @@ namespace SirCorrectifsPulsar
             AccrochesMinerai.Oublier();
             AccrochesEcrans.Oublier();
             AccrochesBlocs.Oublier();
+            MesureDuFil.Oublier();
             MesureDeRequete mesure;
             while (Mesures.TryDequeue(out mesure))
             {
@@ -295,7 +298,7 @@ namespace SirCorrectifsPulsar
 
         private static void ControlerLesAccroches()
         {
-            foreach (Suivi suivi in new[] { Suivi.Minerai, Suivi.Ecrans, Suivi.Blocs })
+            foreach (Suivi suivi in new[] { Suivi.Minerai, Suivi.Ecrans, Suivi.Blocs, Suivi.BlocsDuFil })
             {
                 var jamais = Accroches.JamaisAppelees(suivi);
                 var absentes = Accroches.NonPosees(suivi);

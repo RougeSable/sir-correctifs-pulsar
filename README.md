@@ -6,11 +6,12 @@ Greffon facultatif, installé par les joueurs volontaires (d'abord Guesn et Roug
 
 - quand ses **marqueurs de minerai** apparaissent et disparaissent, et pourquoi ils tardent ;
 - ce que ses **écrans** affichent vraiment (« Online », « Offline » ou leur vrai contenu), au moment où l'image est montrée, et pourquoi ils attendent ;
-- comment se chargent les modèles de l'**hologramme** du bloc en main et des **blocs en chantier** tout proches, qui restent parfois invisibles (cas de Guesn).
+- comment se chargent les modèles de l'**hologramme** du bloc en main et des **blocs en chantier** tout proches, qui restent parfois invisibles (cas de Guesn) ;
+- ce que chaque **type de bloc** (réservoir à hydrogène, propulseur, écran…) coûte, minute par minute, au **fil du jeu** du joueur : ce qui ralentit son écran à lui, pas le serveur.
 
-Ces relevés partent vers le serveur (PU ou PTU), où **Sir Correctifs Torch** les écrit, un fichier par jour, dans `Instance/sir-correctifs-torch/minerai/`, `Instance/sir-correctifs-torch/ecrans/` et `Instance/sir-correctifs-torch/blocs/` (ticket #1452). On a ainsi la réponse en regardant les joueurs jouer.
+Ces relevés partent vers le serveur (PU ou PTU), où **Sir Correctifs Torch** les écrit, un fichier par jour, dans `Instance/sir-correctifs-torch/minerai/`, `Instance/sir-correctifs-torch/ecrans/` et `Instance/sir-correctifs-torch/blocs/` (ticket #1452), et `Instance/sir-correctifs-torch/blocs-du-fil/` (ticket #1478). On a ainsi la réponse en regardant les joueurs jouer.
 
-Le greffon **ne change rien au jeu** : il observe seulement ce que le jeu du joueur calcule déjà, sans jamais relire le terrain, recalculer un écran ni recharger un modèle. Ce qu'il voit hors du fil du jeu (fils de travail, fil de l'affichage) passe par une file sans verrou, vidée par le fil du jeu ; rien n'est écrit depuis le fil de l'affichage. Un joueur sans le greffon joue normalement.
+Le greffon **ne change rien au jeu** : il observe seulement ce que le jeu du joueur calcule déjà, sans jamais relire le terrain, recalculer un écran ni recharger un modèle. Pour les blocs du fil, il fait passer chaque mise à jour d'entité par lui : il fait exactement le même appel, à la même place et dans le même ordre, et ne fait que le chronométrer. Ce qu'il voit hors du fil du jeu (fils de travail, fil de l'affichage) passe par une file sans verrou, vidée par le fil du jeu ; rien n'est écrit depuis le fil de l'affichage. Un joueur sans le greffon joue normalement.
 
 ## S'en servir
 
@@ -39,7 +40,7 @@ On ne note que les **changements** : un état qui se répète ne fait jamais de 
 
 | Événement | Quand | Champs principaux |
 |---|---|---|
-| `partie prête` | à chaque connexion, quand le joueur a la main (aussi dans `ecrans/` et `blocs/`) | `chargement_ms` |
+| `partie prête` | à chaque connexion, quand le joueur a la main (aussi dans `ecrans/`, `blocs/` et `blocs-du-fil/`) | `chargement_ms` |
 | `accès du détecteur` | un détecteur devient (ou cesse d'être) calculé chez le joueur | bloc, grille, portée, `antenne`, `acces_local`, `en_marche`, `groupe_logique`, `acces_au_groupe`, `joueur_sur_la_grille`, `personnage`, `calcule_chez_le_joueur` (la condition même du jeu : en marche, accès, personnage, puis accès au groupe logique par antenne, ou joueur sur la même grille sans antenne) |
 | `début de passage` | un détecteur (ou la foreuse) lance un passage complet | détecteur, portée, `cellules`, `marqueurs`, `appels_occupe`, `appels_sautes` |
 | `fin de passage` | le passage est complet, juste avant que les marqueurs changent | détecteur, portée, `duree_ms`, `requetes` (les quatre, la dernière comprise), `attente_file_max_ms`, `travail_ms`, `processeur_ms`, `gisements`, `apparus`, `disparus`, `marqueurs_du_hud` |
@@ -97,6 +98,29 @@ Seulement pour l'hologramme du bloc en main et les blocs à moins de 15 m dont l
 | `état d'affichage` | toutes les 45 images d'affichage, quand l'état de l'objet change | `visible`, `boite` (une boîte de la taille du modèle d'attente le trahit), `chemin` (`nouveau` ou `ancien`), `modele_d_attente`, `modele_de_l_objet`, `modele_valide`, `etat_de_chargement`, `detail`, `detail_en_transition`, `etat_de_detail`, `tramage`, `dessine`, `ecarte`, et les réglages `detail_min`, `decalage_de_detail`, `multiplicateur_de_distance`, `detail_min_au_chargement` |
 | `objet de rendu retiré` | l'objet n'existe plus côté affichage | |
 
+### Blocs du fil (`blocs-du-fil/`)
+
+Tout ce que le jeu met à jour sur son fil principal, entité par entité, est mesuré : les blocs (et les scripts de mods qu'ils portent), les personnages, les constructions elles-mêmes et ce que leurs systèmes confient à leur file. Seul le fil du jeu est mesuré ; ce que le jeu fait tourner sur ses fils de travail ne l'est pas (la file « très basse » reste dans `minerai/`).
+
+La mesure est un **échantillon** : une image sur 37 seulement (environ 97 par minute) est chronométrée, appel par appel. 37 est premier avec 10 et 100 : le jeu répartit les blocs mis à jour « toutes les 10 (ou 100) images » en tranches rangées par type, et un intervalle multiple de 10 mesurerait toujours les mêmes blocs. Chaque appel compte son **temps propre** : ce qu'il a lui-même appelé de mesuré (le bloc appelé par la file de sa construction, par exemple) en est retiré. Si la mesure prend plus de 0,5 % du fil sur une minute, la suivante mesure moins souvent (une image sur 71, puis 149, 293, 587).
+
+Chaque minute (minute UTC de l'horloge), une ligne `blocs du fil` par type mesuré, du plus coûteux au moins coûteux (200 au plus), puis une ligne `minute du fil` :
+
+| Événement | Champs |
+|---|---|
+| `blocs du fil` | `debut` (début de la minute), `sorte` (`bloc`, `personnage`, `construction`, `systeme` ou `autre`), `type` et `sous_type` (pour un bloc, son type et son sous-type de définition : `OxygenTank` / `LargeHydrogenTank`, `Thrust` / `LargeBlockLargeHydrogenThrust`, `TextPanel`…), `nom` (le nom du bloc dans le jeu du joueur), `temps_total_ms` (sur les images mesurées), `temps_par_image_ms`, `temps_estime_minute_ms` (ramené à toute la minute), `blocs` (ou `personnages`, `constructions`, `entites` : combien d'entités différentes), `appels`, `images_mesurees`, `constructions` (combien de constructions portent ce type), puis les 5 qui en coûtent le plus : `construction_1` (nom) … `construction_5`, chacune avec `_id`, `_ms` et `_appels` |
+| `minute du fil` | `debut`, `fin`, `temps_du_fil_ms` (le temps écoulé sur le fil du jeu pendant la minute), `images`, `images_mesurees`, `intervalle`, `temps_des_entites_ms` (toutes les mises à jour des entités sur les images mesurées), `temps_attribue_ms` (la part rendue à un type), `types`, `types_non_ecrits`, `appels_mesures`, et le coût de la mesure elle-même : `cout_de_la_mesure_ms` (chronométré), `cout_hors_echantillon_ms` (le test fait à chaque appel des images non mesurées, estimé par un étalonnage au début de la partie), `cout_du_releve_ms` (le tri et les lignes), `cout_total_ms` et `part_du_fil_pct` (coût total sur temps du fil, en %) |
+
+Les sortes :
+
+- `bloc` : un type de bloc, avec ses morceaux mobiles et ce qu'il a confié à la file de sa construction ;
+- `personnage` : tous les personnages, sur une ligne à part (aucun type de bloc n'en compte) ; ni nom ni construction ;
+- `construction` : les constructions elles-mêmes, hors de leurs blocs et de leurs systèmes ;
+- `systeme` : ce qu'une construction appelle pour elle-même (propulsion, réseau électrique, scripts de mods posés sur la construction…), `type` et `sous_type` disant la classe et la méthode du jeu ;
+- `autre` : les autres entités (objets flottants, voxels…), par classe du jeu.
+
+La ligne `partie prête` de `blocs-du-fil/` dit `mesure` : `en route` (avec `intervalle` et `cout_par_appel_hors_echantillon_ns`), `cédée` (avec `greffons`) ou `impossible`. Si un autre greffon est déjà accroché aux mises à jour des entités, la mesure lui cède la place pour la session : le joueur en est averti par une notification, et rien d'autre ne change.
+
 ## Contrôle du greffon
 
 Les méthodes du jeu d'une seule ligne ne sont jamais accrochées : le jeu peut les intégrer à leurs appelants, et l'accroche ne partirait jamais. Chaque accroche compte ses appels ; cinq minutes après la connexion, la ligne `contrôle des accroches` de chaque dossier dit celles qui ne l'ont jamais été (`jamais_appelees`) et celles qui n'ont pas pu être posées (`non_posees`). Toute erreur rattrapée par le greffon (un champ du jeu illisible, par exemple) donne une ligne au journal du jeu la première fois, puis un rapport d'erreur avec son nombre de répétitions.
@@ -112,7 +136,7 @@ Les méthodes du jeu d'une seule ligne ne sont jamais accrochées : le jeu peut 
 ## Accord avec Sir Correctifs Torch
 
 - Canal réseau des relevés : **47815**, du joueur vers le serveur (`SendMessageToServer`, envoi fiable). Aucun autre produit du studio ne l'utilise.
-- Un paquet est un texte UTF-8 sans marque d'ordre des octets, de 8 000 octets au plus. Sa première ligne est `sir-correctifs-pulsar releves 1` ; chaque ligne suivante commence par le dossier (`minerai`, `ecrans` ou `blocs`), une espace, puis la ligne du relevé telle qu'elle doit s'écrire.
+- Un paquet est un texte UTF-8 sans marque d'ordre des octets, de 8 000 octets au plus. Sa première ligne est `sir-correctifs-pulsar releves 1` ; chaque ligne suivante commence par le dossier (`minerai`, `ecrans`, `blocs` ou `blocs-du-fil`), une espace, puis la ligne du relevé telle qu'elle doit s'écrire. Les lignes `blocs-du-fil` arrivent par rafale d'une minute (au plus 201 lignes), juste après chaque minute UTC.
 - Les paquets partent quatre fois par seconde. Si le joueur est coupé du serveur, au plus 20 000 lignes attendent ; au-delà, une ligne `lignes perdues` dit combien ont été jetées.
 
 ## Rapports d'erreurs
