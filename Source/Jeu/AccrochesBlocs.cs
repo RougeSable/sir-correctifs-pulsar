@@ -65,7 +65,6 @@ namespace SirCorrectifsPulsar
 
         // Le bloc dont le jeu crée l'objet de rendu, sur ce fil.
         [ThreadStatic] private static MyCubeBlock t_blocCourant;
-        [ThreadStatic] private static long t_debutDuChargement;
 
         private static int s_images;
         private static bool s_pleinDit;
@@ -121,9 +120,7 @@ namespace SirCorrectifsPulsar
 
             s_modeleDemande = Accroches.Poser(harmony, Suivi.Blocs, "modèle demandé",
                 () => Accroches.Methode(usine, "GetOrCreateModels"), null, "ModeleDemande", moi);
-            s_chargement = Accroches.Poser(harmony, Suivi.Blocs, "chargement d'un modèle",
-                () => Accroches.Methode(usine, "LoadInternal"), "AvantLeChargement", null, moi);
-            PoserLaFinDuChargement(harmony, usine);
+            PoserLeChargement(harmony, usine);
             s_finDeChargement = Accroches.Poser(harmony, Suivi.Blocs, "fin de chargement",
                 () => Accroches.Methode(usine, "FinalizeLoad"), "AvantLaFinDeChargement", null, moi);
             s_modelePose = Accroches.Poser(harmony, Suivi.Blocs, "modèle posé sur l'objet",
@@ -138,26 +135,54 @@ namespace SirCorrectifsPulsar
                 () => Accroches.Methode(usine, "CompleteAsyncTasks"), null, "ReleverLesObjets", moi);
         }
 
-        // Un finaliseur Harmony : il voit l'exception du chargement sans
-        // l'avaler (le jeu la reçoit telle quelle).
-        private static void PoserLaFinDuChargement(Harmony harmony, Type usine)
+        // Le chargement d'un modèle est chronométré (duree_ms) : jamais par un
+        // préfixe et un suffixe sur MyModelFactory.LoadInternal, qui tourne
+        // sur les fils de travail. Son appel est encadré là où l'usine le
+        // fait, lu dans le jeu : la demande d'un modèle (chargement direct),
+        // le chargement en tâche de fond et le rechargement de tous les
+        // modèles. Le modèle d'attente, chargé à l'ouverture du moteur de
+        // rendu (OnDeviceInit), n'est jamais suivi : son appel n'est pas
+        // encadré.
+        private static void PoserLeChargement(Harmony harmony, Type usine)
         {
-            var accroche = new Accroche { Nom = "fin du chargement d'un modèle", Suivi = Suivi.Blocs };
-            Accroches.Toutes.Add(accroche);
             try
             {
-                var methode = Accroches.Methode(usine, "LoadInternal");
-                harmony.Patch(methode, finalizer: new HarmonyMethod(AccessTools.Method(typeof(AccrochesBlocs), "ApresLeChargement")));
-                accroche.Posee = true;
-                s_finDuChargement = accroche;
+                s_charger = AppelDuChargement(Accroches.Methode(usine, "LoadInternal"), usine);
             }
             catch (Exception e)
             {
-                GreffonSirCorrectifsPulsar.Journal.Erreur("accroche « fin du chargement d'un modèle » non posée, ce relevé manquera", e);
+                GreffonSirCorrectifsPulsar.Journal.Erreur("chargement des modèles illisible : sa durée ne sera pas relevée", e);
+                return;
             }
+            s_chargement = Accroches.Encadrer(harmony, Suivi.Blocs, "chargement d'un modèle",
+                () => Accroches.Methode(usine, "LoadInternal"),
+                () => new MethodBase[]
+                {
+                    Accroches.Methode(usine, "GetOrCreateModels"),
+                    Accroches.Methode(usine, "LoadInternalAsync"),
+                    Accroches.Methode(usine, "ReloadModels"),
+                },
+                "EncadrerLeChargement", typeof(AccrochesBlocs));
         }
 
-        private static Accroche s_finDuChargement;
+        // L'appel de LoadInternal (une méthode privée de l'usine, sur un
+        // modèle d'un type interne au moteur de rendu), tel que l'usine le
+        // fait : l'usine, le chemin, le modèle.
+        private static Action<object, string, object> s_charger;
+
+        private static Action<object, string, object> AppelDuChargement(MethodInfo charger, Type usine)
+        {
+            var parametres = charger.GetParameters();
+            if (charger.IsStatic || parametres.Length != 2 || parametres[0].ParameterType != typeof(string))
+                throw new NotSupportedException("MyModelFactory.LoadInternal ne prend plus (chemin, modèle)");
+            var lUsine = System.Linq.Expressions.Expression.Parameter(typeof(object), "usine");
+            var leChemin = System.Linq.Expressions.Expression.Parameter(typeof(string), "filepath");
+            var leModele = System.Linq.Expressions.Expression.Parameter(typeof(object), "model");
+            var appel = System.Linq.Expressions.Expression.Call(
+                System.Linq.Expressions.Expression.Convert(lUsine, usine), charger,
+                leChemin, System.Linq.Expressions.Expression.Convert(leModele, parametres[1].ParameterType));
+            return System.Linq.Expressions.Expression.Lambda<Action<object, string, object>>(appel, lUsine, leChemin, leModele).Compile();
+        }
 
         public static void Oublier()
         {
@@ -461,23 +486,35 @@ namespace SirCorrectifsPulsar
             }
         }
 
-        // Sur un fil de travail (chargement en tâche de fond) ou sur le fil de
-        // l'affichage.
-        private static void AvantLeChargement()
+        // L'appel que l'usine fait de LoadInternal, fait ici à sa place,
+        // exactement une fois et avec les mêmes arguments, entre deux lectures
+        // de l'horloge. Sur un fil de travail (chargement en tâche de fond) ou
+        // sur le fil de l'affichage. Une exception du chargement est relevée,
+        // puis relancée telle quelle : le jeu la reçoit comme avant.
+        public static void EncadrerLeChargement(object usine, string filepath, object model)
         {
-            t_debutDuChargement = Stopwatch.GetTimestamp();
-            if (Collecte.Actif)
+            if (!Collecte.Actif)
+            {
+                s_charger(usine, filepath, model);
+                return;
+            }
+            if (s_chargement != null)
                 s_chargement.Compter();
+            var debut = Stopwatch.GetTimestamp();
+            try
+            {
+                s_charger(usine, filepath, model);
+            }
+            catch (Exception e)
+            {
+                ApresLeChargement(e, filepath, model, Collecte.Millisecondes(debut, Stopwatch.GetTimestamp()));
+                throw;
+            }
+            ApresLeChargement(null, filepath, model, Collecte.Millisecondes(debut, Stopwatch.GetTimestamp()));
         }
 
-        private static void ApresLeChargement(Exception __exception, string filepath, object model)
+        private static void ApresLeChargement(Exception exception, string filepath, object model, double dureeMs)
         {
-            var debut = t_debutDuChargement;
-            t_debutDuChargement = 0;
-            if (!Collecte.Actif)
-                return;
-            if (s_finDuChargement != null)
-                s_finDuChargement.Compter();
             if (s_modeles.IsEmpty)
                 return;
             try
@@ -486,16 +523,15 @@ namespace SirCorrectifsPulsar
                     return;
                 var champs = new ChampsDuReleve();
                 champs.Texte("modele", filepath);
-                if (debut != 0)
-                    champs.Nombre("duree_ms", Collecte.Millisecondes(debut, Stopwatch.GetTimestamp()), 1);
+                champs.Nombre("duree_ms", dureeMs, 1);
                 champs.Texte("etat_de_chargement", Texte(Lire(model, "LoadState")));
                 champs.Texte("valide", OuiNon(Lire(model, "IsValid")));
-                if (__exception != null)
+                if (exception != null)
                 {
-                    champs.Texte("exception", __exception.GetType().Name);
-                    champs.Texte("message", __exception.Message);
+                    champs.Texte("exception", exception.GetType().Name);
+                    champs.Texte("message", exception.Message);
                 }
-                Noter(__exception == null ? "modèle chargé" : "chargement du modèle en échec", champs);
+                Noter(exception == null ? "modèle chargé" : "chargement du modèle en échec", champs);
             }
             catch (Exception e)
             {

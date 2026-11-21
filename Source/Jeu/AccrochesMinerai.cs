@@ -49,7 +49,7 @@ namespace SirCorrectifsPulsar
         private static AccessTools.FieldRef<MyOreDetector, MyOreDetectorComponent> s_composantDuBloc;
         private static AccessTools.FieldRef<MyHandDrill, MyOreDetectorComponent> s_composantDeLaForeuse;
 
-        private static Accroche s_debut, s_fin, s_nettoyage, s_miseEnFile, s_travail, s_acces, s_foreuse, s_foreuseEnMain, s_foreuseRangee;
+        private static Accroche s_debut, s_fin, s_nettoyage, s_miseEnFile, s_acces, s_foreuse, s_foreuseEnMain, s_foreuseRangee;
 
         // Les accroches qui ne posent qu'une cause : comptées dans leur préfixe,
         // comme les autres, pour que le contrôle des accroches les juge aussi.
@@ -68,24 +68,9 @@ namespace SirCorrectifsPulsar
         private static readonly ConditionalWeakTable<object, InfoDuGroupe> s_groupes = new ConditionalWeakTable<object, InfoDuGroupe>();
         private static long s_prochainGroupe;
 
-        // Quand une requête a été mise en file, et pour quel groupe.
-        private struct MiseEnFile
-        {
-            public long Moment;
-            public long Groupe;
-        }
-
-        private static readonly ConcurrentDictionary<string, MiseEnFile> s_misesEnFile = new ConcurrentDictionary<string, MiseEnFile>();
-
         // Ce que l'appelant du jeu est en train de faire quand il retire des
         // marqueurs : posé avant, relu au nettoyage. Fil du jeu seulement.
         private static string s_cause;
-
-        // Le début du travail d'une requête, sur son propre fil de travail.
-        [ThreadStatic] private static long t_debut;
-        [ThreadStatic] private static long t_processeur;
-        [ThreadStatic] private static long t_miseEnFile;
-        [ThreadStatic] private static long t_groupe;
 
         public static void Poser(Harmony harmony)
         {
@@ -121,11 +106,26 @@ namespace SirCorrectifsPulsar
                 "AvantLaFin", "ApresLaFin", moi);
             s_nettoyage = Accroches.Poser(harmony, Suivi.Minerai, "nettoyage", () => Accroches.Methode(s_groupe, "Cleanup"),
                 "AvantLeNettoyage", null, moi);
-            s_miseEnFile = Accroches.Poser(harmony, Suivi.Minerai, "mise en file", () => Accroches.Methode(Accroches.Type(Requete), "Start"),
-                "AvantLaMiseEnFile", null, moi);
-            s_travail = Accroches.Poser(harmony, Suivi.Minerai, "travail d'une requête",
-                () => Accroches.MethodeDInterface(Accroches.Type(Requete), typeof(IWork), "DoWork"),
-                "AvantLeTravail", "ApresLeTravail", moi);
+            // Le travail d'une requête est chronométré (travail_ms,
+            // processeur_ms) : jamais par un préfixe et un suffixe sur son
+            // DoWork, qui tourne sur les fils de travail. L'appel par lequel
+            // MyDepositQuery.Start confie la requête au jeu est encadré : le
+            // greffon lui confie à la place une enveloppe de la requête, qui
+            // fait son DoWork entre deux lectures de l'horloge.
+            try
+            {
+                s_rappelDeLaRequete = AccessTools.Property(Accroches.Type(Requete), "CompletionCallback");
+                if (s_rappelDeLaRequete == null)
+                    throw new MissingMemberException(Requete + ".CompletionCallback introuvable");
+                s_miseEnFile = Accroches.Encadrer(harmony, Suivi.Minerai, "mise en file",
+                    () => Accroches.Methode(typeof(Parallel), "Start", typeof(IWork), typeof(Action)),
+                    () => new System.Reflection.MethodBase[] { Accroches.Methode(Accroches.Type(Requete), "Start") },
+                    "LancerLaRequete", moi);
+            }
+            catch (Exception e)
+            {
+                GreffonSirCorrectifsPulsar.Journal.Erreur("requêtes du détecteur illisibles : leur travail ne sera pas mesuré", e);
+            }
             s_acces = Accroches.Poser(harmony, Suivi.Minerai, "accès du détecteur", () => Accroches.Methode(typeof(MyOreDetector), "UpdateBeforeSimulation100"),
                 "CauseAccesPerdu", "ApresLeDetecteur", moi);
             s_foreuse = Accroches.Poser(harmony, Suivi.Minerai, "foreuse portative", () => Accroches.Methode(typeof(MyHandDrill), "UpdateBeforeSimulation100"),
@@ -152,7 +152,6 @@ namespace SirCorrectifsPulsar
 
         public static void Oublier()
         {
-            s_misesEnFile.Clear();
             s_cause = null;
         }
 
@@ -447,94 +446,93 @@ namespace SirCorrectifsPulsar
 
         // ---- Requêtes (fils de travail) ------------------------------------
 
-        private static string CleDeRequete(long detecteurId, MyVoxelBase voxel, Vector3I min)
-        {
-            return detecteurId + "/" + (voxel == null ? 0 : voxel.EntityId) + "/" + min.X + "/" + min.Y + "/" + min.Z;
-        }
+        private static System.Reflection.PropertyInfo s_rappelDeLaRequete;
 
-        private static void AvantLaMiseEnFile(Vector3I min, long detectorId, MyVoxelBase voxelMap,
-            Action<List<MyEntityOreDeposit>, List<Vector3I>> completionCallback)
+        // L'appel par lequel MyDepositQuery.Start confie la requête au jeu
+        // (Parallel.Start), fait ici à sa place, exactement une fois. Quand la
+        // collecte tourne, le jeu reçoit l'enveloppe de la requête au lieu de
+        // la requête elle-même : mêmes options, même priorité, même rappel.
+        public static Task LancerLaRequete(IWork travail, Action rappel)
         {
-            if (!Collecte.Actif)
-                return;
+            var requete = travail as IPrioritizedWork;
+            if (!Collecte.Actif || requete == null || s_miseEnFile == null)
+                return Parallel.Start(travail, rappel);
+            RequeteMesuree enveloppe = null;
             try
             {
                 s_miseEnFile.Compter();
-                var cible = completionCallback == null ? null : completionCallback.Target;
+                var fin = s_rappelDeLaRequete.GetValue(requete, null) as Delegate;
+                var cible = fin == null ? null : fin.Target;
                 var groupe = cible == null || s_groupe == null || !s_groupe.IsInstanceOfType(cible) ? 0 : Info(cible).Identifiant;
-                s_misesEnFile[CleDeRequete(detectorId, voxelMap, min)] = new MiseEnFile { Moment = Stopwatch.GetTimestamp(), Groupe = groupe };
+                enveloppe = new RequeteMesuree(requete, groupe, Stopwatch.GetTimestamp());
             }
             catch (Exception e)
             {
                 Fautes.Noter("mise en file d'une requête", e);
             }
+            return Parallel.Start(enveloppe ?? travail, rappel);
         }
 
-        private static volatile System.Reflection.PropertyInfo s_detecteurDeLaRequete;
-        private static System.Reflection.PropertyInfo s_voxelDeLaRequete;
-        private static System.Reflection.PropertyInfo s_minDeLaRequete;
-
-        private static void AvantLeTravail(object __instance)
+        // L'enveloppe d'une requête : son DoWork fait celui de la requête,
+        // exactement une fois, avec les mêmes données, entre deux lectures de
+        // l'horloge (et du temps processeur du fil). Une exception du jeu
+        // passe telle quelle, sans mesure.
+        private sealed class RequeteMesuree : IPrioritizedWork
         {
-            t_debut = 0;
+            private readonly IPrioritizedWork m_requete;
+            private readonly long m_groupe;
+            private readonly long m_miseEnFile;
+
+            public RequeteMesuree(IPrioritizedWork requete, long groupe, long miseEnFile)
+            {
+                m_requete = requete;
+                m_groupe = groupe;
+                m_miseEnFile = miseEnFile;
+            }
+
+            public WorkOptions Options
+            {
+                get { return m_requete.Options; }
+            }
+
+            public WorkPriority Priority
+            {
+                get { return m_requete.Priority; }
+            }
+
+            public void DoWork(WorkData workData = null)
+            {
+                var processeur = TempsProcesseur();
+                var debut = Stopwatch.GetTimestamp();
+                m_requete.DoWork(workData);
+                var fin = Stopwatch.GetTimestamp();
+                ApresLeTravail(m_requete, m_groupe, m_miseEnFile, debut, fin, processeur, TempsProcesseur());
+            }
+        }
+
+        private static void ApresLeTravail(object requete, long groupe, long miseEnFile, long debut, long fin,
+            long processeurAvant, long processeurApres)
+        {
             if (!Collecte.Actif)
                 return;
             try
             {
-                var requete = __instance;
-                if (s_detecteurDeLaRequete == null)
-                {
-                    var type = requete.GetType();
-                    s_minDeLaRequete = AccessTools.Property(type, "Min");
-                    s_voxelDeLaRequete = AccessTools.Property(type, "VoxelMap");
-                    s_detecteurDeLaRequete = AccessTools.Property(type, "DetectorId");
-                }
-                var detecteur = (long)s_detecteurDeLaRequete.GetValue(requete, null);
-                var voxel = (MyVoxelBase)s_voxelDeLaRequete.GetValue(requete, null);
-                var min = (Vector3I)s_minDeLaRequete.GetValue(requete, null);
-                MiseEnFile mise;
-                if (!s_misesEnFile.TryRemove(CleDeRequete(detecteur, voxel, min), out mise))
-                    return;
-                t_miseEnFile = mise.Moment;
-                t_groupe = mise.Groupe;
-                t_processeur = TempsProcesseur();
-                t_debut = Stopwatch.GetTimestamp();
-            }
-            catch (Exception e)
-            {
-                Fautes.Noter("début du travail d'une requête", e);
-            }
-        }
-
-        private static void ApresLeTravail(object __instance)
-        {
-            if (t_debut == 0)
-                return;
-            try
-            {
-                s_travail.Compter();
-                var fin = Stopwatch.GetTimestamp();
-                var processeur = TempsProcesseur();
-                var resultat = s_resultat(__instance);
-                var vides = s_cellulesVides(__instance);
+                var resultat = s_resultat(requete);
+                var vides = s_cellulesVides(requete);
                 Collecte.Mesures.Enqueue(new MesureDeRequete
                 {
-                    Groupe = t_groupe,
-                    AttenteMs = Collecte.Millisecondes(t_miseEnFile, t_debut),
-                    TravailMs = Collecte.Millisecondes(t_debut, fin),
-                    ProcesseurMs = processeur < 0 || t_processeur < 0 ? -1 : (processeur - t_processeur) / 10000.0,
+                    Groupe = groupe,
+                    AttenteMs = Collecte.Millisecondes(miseEnFile, debut),
+                    TravailMs = Collecte.Millisecondes(debut, fin),
+                    ProcesseurMs = processeurApres < 0 || processeurAvant < 0 ? -1 : (processeurApres - processeurAvant) / 10000.0,
                     Gisements = resultat == null ? 0 : resultat.Count,
                     CellulesVides = vides == null ? 0 : vides.Count,
-                    Annulee = s_annulee(__instance),
+                    Annulee = s_annulee(requete),
                 });
             }
             catch (Exception e)
             {
                 Fautes.Noter("fin du travail d'une requête", e);
-            }
-            finally
-            {
-                t_debut = 0;
             }
         }
 

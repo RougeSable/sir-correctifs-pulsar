@@ -37,6 +37,17 @@ namespace SirCorrectifsPulsar
     // de mesuré) va à son type. Seul le fil du jeu est mesuré : une
     // construction mise à jour sur un fil de travail ne l'est pas.
     //
+    // Le temps de toutes les mises à jour des entités d'une image mesurée est
+    // celui des quatre étapes de l'orchestrateur (DispatchOnceBeforeFrame,
+    // DispatchBeforeSimulation, DispatchSimulate, DispatchAfterSimulation).
+    // Il est pris, étape par étape, en encadrant l'appel que MyEntities fait
+    // de chacune : l'appel passe par le greffon, qui le fait lui-même entre
+    // deux lectures de l'horloge (voir EtapesDeLOrchestrateur). Aucune
+    // mesure ne pose de préfixe ni de suffixe sur une méthode du jeu (un
+    // chronomètre ainsi posé par Sir Studio Torch a fait monter les
+    // vaisseaux le 20/11), et les méthodes du registre des méthodes
+    // interdites ne sont jamais accrochées.
+    //
     // Ce que la mesure coûte est chronométré avec elle ; si elle prend plus de
     // 0,5 % du fil sur une minute, la suivante mesure moins souvent.
     //
@@ -60,8 +71,10 @@ namespace SirCorrectifsPulsar
         // La mesure de l'image en cours (fil du jeu seulement).
         private static long s_enfants;
         private static long s_cout;
-        private static long s_ticksDesEntites;
-        private static long s_debutDesEntites;
+
+        // Le temps des quatre étapes de l'orchestrateur, image par image.
+        private static readonly ChronometreDesEtapes s_chronometre = new ChronometreDesEtapes(Stopwatch.GetTimestamp);
+        private static readonly long[] s_ticksDesEtapes = new long[EtapesDeLOrchestrateur.Toutes.Length];
 
         private static DateTime s_debutDeLaMinute;
         private static long s_debutDeLaMinuteTicks;
@@ -69,11 +82,25 @@ namespace SirCorrectifsPulsar
 
         private static Harmony s_harmony;
         private static readonly List<Accroche> s_accroches = new List<Accroche>();
-        private static readonly Dictionary<MethodBase, Accroche> s_accrochesDesEtapes = new Dictionary<MethodBase, Accroche>();
         private static string s_cedeeA;
         private static bool s_cessionDite;
 
         private static Accroche s_uneFois, s_avant, s_avant10, s_avant100, s_simulation, s_apres, s_apres10, s_apres100, s_fileDeLaConstruction;
+
+        // Les encadrements des quatre étapes, posés sur leurs appelants (MyEntities),
+        // par étape.
+        private static readonly Accroche[] s_etapes = new Accroche[EtapesDeLOrchestrateur.Toutes.Length];
+
+        // Les appels des étapes que la réécriture des appelants fait passer
+        // par le greffon.
+        private static readonly Dictionary<MethodInfo, MethodInfo> s_encadrements = new Dictionary<MethodInfo, MethodInfo>();
+
+        // Les appels des étapes, faits par le greffon ; sans capture, chacun
+        // est créé une fois.
+        private static readonly Action s_appelUneFois = () => MyEntities.UpdateOnceBeforeFrame();
+        private static readonly Action<IMyUpdateOrchestrator> s_appelAvant = o => o.DispatchBeforeSimulation();
+        private static readonly Action<IMyUpdateOrchestrator> s_appelSimulation = o => o.DispatchSimulate();
+        private static readonly Action<IMyUpdateOrchestrator> s_appelApres = o => o.DispatchAfterSimulation();
 
         // Les appels du jeu que les réécritures font passer par le greffon.
         private static readonly Dictionary<MethodInfo, MethodInfo> s_remplacants = new Dictionary<MethodInfo, MethodInfo>();
@@ -107,20 +134,23 @@ namespace SirCorrectifsPulsar
         internal static void Poser(Harmony harmony)
         {
             s_harmony = harmony;
-            var moi = typeof(MesureDuFil);
             Type orchestrateur;
             MethodInfo[] etapes, boucles;
+            var appelants = new List<KeyValuePair<MethodInfo, List<EtapeEncadree>>>();
             MethodBase dispatch;
             try
             {
                 orchestrateur = Accroches.Type("Sandbox.Game.Entities.MyParallelEntityUpdateOrchestrator");
-                etapes = new[]
+                var typeDesAppelants = Accroches.Type(EtapesDeLOrchestrateur.TypeDesAppelants);
+                var plan = EtapesDeLOrchestrateur.Toutes;
+                etapes = new MethodInfo[plan.Length];
+                foreach (var etape in plan)
                 {
-                    Accroches.Methode(orchestrateur, "DispatchOnceBeforeFrame"),
-                    Accroches.Methode(orchestrateur, "DispatchBeforeSimulation"),
-                    Accroches.Methode(orchestrateur, "DispatchSimulate"),
-                    Accroches.Methode(orchestrateur, "DispatchAfterSimulation"),
-                };
+                    etapes[etape.Numero] = Accroches.Methode(orchestrateur, etape.Etape);
+                    Encadrer(SansArgument(Accroches.Type(etape.TypeAppele), etape.Appel), etape.Encadrement);
+                }
+                foreach (var appelant in EtapesDeLOrchestrateur.ParAppelant())
+                    appelants.Add(new KeyValuePair<MethodInfo, List<EtapeEncadree>>(SansArgument(typeDesAppelants, appelant.Key), appelant.Value));
                 boucles = new[]
                 {
                     Accroches.Methode(orchestrateur, "UpdateBeforeSimulation"),
@@ -148,6 +178,8 @@ namespace SirCorrectifsPulsar
 
             // Deux greffons ne se disputent jamais une même étape du jeu.
             var cibles = new List<MethodBase>(etapes);
+            foreach (var appelant in appelants)
+                cibles.Add(appelant.Key);
             cibles.AddRange(boucles);
             if (dispatch != null)
                 cibles.Add(dispatch);
@@ -158,18 +190,42 @@ namespace SirCorrectifsPulsar
                 return;
             }
 
-            s_uneFois = PoserLaReecriture("mises à jour uniques des entités", etapes[0], "AvantLesEntites", "ApresLesEntites");
-            PoserLEtape("mises à jour des entités avant la simulation", etapes[1]);
-            s_simulation = PoserLaReecriture("simulation des entités", etapes[2], "AvantLesEntites", "ApresLesEntites");
-            PoserLEtape("mises à jour des entités après la simulation", etapes[3]);
-            s_avant = PoserLaReecriture("entités avant la simulation", boucles[0], null, null);
-            s_avant10 = PoserLaReecriture("entités avant la simulation, toutes les 10 images", boucles[1], null, null);
-            s_avant100 = PoserLaReecriture("entités avant la simulation, toutes les 100 images", boucles[2], null, null);
-            s_apres = PoserLaReecriture("entités après la simulation", boucles[3], null, null);
-            s_apres10 = PoserLaReecriture("entités après la simulation, toutes les 10 images", boucles[4], null, null);
-            s_apres100 = PoserLaReecriture("entités après la simulation, toutes les 100 images", boucles[5], null, null);
+            // Le temps des étapes : l'appel que MyEntities fait de chacune
+            // passe par le greffon, qui l'encadre.
+            foreach (var appelant in appelants)
+            {
+                var accroche = PoserLEncadrement(appelant.Value, appelant.Key);
+                foreach (var etape in appelant.Value)
+                    s_etapes[etape.Numero] = accroche;
+            }
+
+            // Le temps de chaque entité : les boucles de l'orchestrateur.
+            s_uneFois = PoserLaReecriture("entités mises à jour une fois avant l'image", etapes[0]);
+            s_simulation = PoserLaReecriture("entités simulées", etapes[2]);
+            s_avant = PoserLaReecriture("entités avant la simulation", boucles[0]);
+            s_avant10 = PoserLaReecriture("entités avant la simulation, toutes les 10 images", boucles[1]);
+            s_avant100 = PoserLaReecriture("entités avant la simulation, toutes les 100 images", boucles[2]);
+            s_apres = PoserLaReecriture("entités après la simulation", boucles[3]);
+            s_apres10 = PoserLaReecriture("entités après la simulation, toutes les 10 images", boucles[4]);
+            s_apres100 = PoserLaReecriture("entités après la simulation, toutes les 100 images", boucles[5]);
             if (dispatch != null)
-                s_fileDeLaConstruction = PoserLaReecriture("file des constructions", dispatch, null, null, "ReecrireLaFile");
+                s_fileDeLaConstruction = PoserLaReecriture("file des constructions", dispatch, "ReecrireLaFile");
+        }
+
+        private static MethodInfo SansArgument(Type type, string nom)
+        {
+            var methode = AccessTools.Method(type, nom, Type.EmptyTypes);
+            if (methode == null)
+                throw new MissingMemberException(type.FullName + "." + nom + " introuvable");
+            return methode;
+        }
+
+        private static void Encadrer(MethodInfo etape, string encadrement)
+        {
+            var notre = typeof(MesureDuFil).GetMethod(encadrement, BindingFlags.Public | BindingFlags.Static);
+            if (notre == null)
+                throw new MissingMemberException("MesureDuFil." + encadrement + " introuvable");
+            s_encadrements[etape] = notre;
         }
 
         private static void Remplacer(Type type, string methode, string remplacant)
@@ -244,13 +300,11 @@ namespace SirCorrectifsPulsar
                 + " : la mesure des blocs du fil lui cède la place pour la session");
         }
 
-        private static Accroche PoserLaReecriture(string nom, MethodBase cible, string prefixe, string postfixe, string reecriture = "Reecrire")
+        private static Accroche PoserLaReecriture(string nom, MethodBase cible, string reecriture = "Reecrire")
         {
             s_remplaces = 0;
-            var accroche = Accroches.Poser(s_harmony, Suivi.BlocsDuFil, nom, () => cible, prefixe, postfixe, reecriture, typeof(MesureDuFil));
+            var accroche = Accroches.Reecrire(s_harmony, Suivi.BlocsDuFil, nom, () => cible, reecriture, typeof(MesureDuFil));
             s_accroches.Add(accroche);
-            if (prefixe != null)
-                s_accrochesDesEtapes[cible] = accroche;
             if (accroche.Posee && s_remplaces == 0)
             {
                 // Rien à réécrire : la méthode a changé dans cette version du jeu.
@@ -260,15 +314,36 @@ namespace SirCorrectifsPulsar
             return accroche;
         }
 
-        private static void PoserLEtape(string nom, MethodBase cible)
+        // L'encadrement des étapes d'un appelant : dans cette méthode de
+        // MyEntities, l'appel de chaque étape passe par le greffon. Il en faut
+        // exactement un par étape : sinon, la méthode a changé dans cette
+        // version du jeu, et l'accroche est retirée.
+        private static Accroche PoserLEncadrement(List<EtapeEncadree> etapes, MethodBase appelant)
         {
-            var accroche = Accroches.Poser(s_harmony, Suivi.BlocsDuFil, nom, () => cible, "AvantLesEntites", "ApresLesEntites", typeof(MesureDuFil));
+            var noms = string.Join(", ", etapes.Select(e => e.Nom).ToArray());
+            s_remplaces = 0;
+            var accroche = Accroches.Reecrire(s_harmony, Suivi.BlocsDuFil, "étapes : " + noms, () => appelant, "EncadrerLesEtapes", typeof(MesureDuFil));
             s_accroches.Add(accroche);
-            s_accrochesDesEtapes[cible] = accroche;
+            if (accroche.Posee && s_remplaces != etapes.Count)
+            {
+                try
+                {
+                    s_harmony.Unpatch(appelant, HarmonyPatchType.All, s_harmony.Id);
+                }
+                catch (Exception e)
+                {
+                    Fautes.Noter("retrait d'un encadrement des blocs du fil", e);
+                }
+                accroche.Posee = false;
+                GreffonSirCorrectifsPulsar.Journal.Erreur("« " + noms + " » : " + s_remplaces + " appel(s) trouvé(s) à encadrer au lieu de "
+                    + etapes.Count + ", leur temps manquera", null);
+            }
+            return accroche;
         }
 
-        // Réécriture des boucles de l'orchestrateur : « entite.UpdateX() »
-        // devient « MesureDuFil.X(entite) », qui fait le même appel.
+        // Réécriture des boucles de l'orchestrateur : l'appel de UpdateX sur
+        // une entité devient l'appel de MesureDuFil.X avec cette entité, qui
+        // fait le même appel.
         private static IEnumerable<CodeInstruction> Reecrire(IEnumerable<CodeInstruction> instructions)
         {
             foreach (var instruction in instructions)
@@ -286,8 +361,10 @@ namespace SirCorrectifsPulsar
             }
         }
 
-        // Réécriture de la file d'une construction : « this.Invoke(ref u, queue) »
-        // devient « MesureDuFil.AppelDeLaConstruction(this, u.Callback) ».
+        // Réécriture de la file d'une construction : l'appel de Invoke par la
+        // construction, avec un élément de sa file, devient l'appel de
+        // MesureDuFil.AppelDeLaConstruction avec la construction et le rappel
+        // de cet élément (son champ Callback).
         private static IEnumerable<CodeInstruction> ReecrireLaFile(IEnumerable<CodeInstruction> instructions)
         {
             foreach (var instruction in instructions)
@@ -306,6 +383,66 @@ namespace SirCorrectifsPulsar
                 }
                 yield return instruction;
             }
+        }
+
+        // Réécriture des appelants des étapes (MyEntities) : l'appel d'une
+        // étape devient l'appel de son encadrement, qui fait le même appel,
+        // avec les mêmes arguments. Rien d'autre ne change.
+        private static IEnumerable<CodeInstruction> EncadrerLesEtapes(IEnumerable<CodeInstruction> instructions)
+        {
+            foreach (var instruction in instructions)
+            {
+                var appel = instruction.operand as MethodInfo;
+                MethodInfo encadrement;
+                if ((instruction.opcode == OpCodes.Callvirt || instruction.opcode == OpCodes.Call)
+                    && appel != null && s_encadrements.TryGetValue(appel, out encadrement))
+                {
+                    instruction.opcode = OpCodes.Call;
+                    instruction.operand = encadrement;
+                    s_remplaces++;
+                }
+                yield return instruction;
+            }
+        }
+
+        // ---- Les étapes de l'orchestrateur, appelées par le greffon ----------
+
+        // Une étape est chronométrée sur une image mesurée, au fil du jeu.
+        private static bool EtapeMesuree()
+        {
+            return s_echantillon && Environment.CurrentManagedThreadId == s_filDuJeu;
+        }
+
+        private static void Compter(Accroche accroche)
+        {
+            if (accroche != null)
+                accroche.Appels++;
+        }
+
+        public static void EtapeUneFoisAvantLImage()
+        {
+            Compter(s_etapes[0]);
+            Compter(s_uneFois);
+            s_chronometre.Encadrer(0, EtapeMesuree(), s_appelUneFois);
+        }
+
+        public static void EtapeAvantLaSimulation(IMyUpdateOrchestrator orchestrateur)
+        {
+            Compter(s_etapes[1]);
+            s_chronometre.Encadrer(1, EtapeMesuree(), orchestrateur, s_appelAvant);
+        }
+
+        public static void EtapeSimulation(IMyUpdateOrchestrator orchestrateur)
+        {
+            Compter(s_etapes[2]);
+            Compter(s_simulation);
+            s_chronometre.Encadrer(2, EtapeMesuree(), orchestrateur, s_appelSimulation);
+        }
+
+        public static void EtapeApresLaSimulation(IMyUpdateOrchestrator orchestrateur)
+        {
+            Compter(s_etapes[3]);
+            s_chronometre.Encadrer(3, EtapeMesuree(), orchestrateur, s_appelApres);
         }
 
         // ---- Les appels du jeu, faits par le greffon -------------------------
@@ -644,24 +781,6 @@ namespace SirCorrectifsPulsar
             return construction == null ? null : construction.DisplayName;
         }
 
-        // ---- Le temps de toutes les mises à jour des entités -----------------
-
-        private static void AvantLesEntites(MethodBase __originalMethod)
-        {
-            Accroche accroche;
-            if (__originalMethod != null && s_accrochesDesEtapes.TryGetValue(__originalMethod, out accroche))
-                accroche.Appels++;
-            s_debutDesEntites = s_echantillon && Environment.CurrentManagedThreadId == s_filDuJeu ? Stopwatch.GetTimestamp() : 0;
-        }
-
-        private static void ApresLesEntites()
-        {
-            if (s_debutDesEntites == 0)
-                return;
-            s_ticksDesEntites += Stopwatch.GetTimestamp() - s_debutDesEntites;
-            s_debutDesEntites = 0;
-        }
-
         // ---- Sur le fil du jeu, par Collecte ---------------------------------
 
         // La partie est prête, sur l'un de nos serveurs.
@@ -713,7 +832,7 @@ namespace SirCorrectifsPulsar
                 s_intervalle = ReleveBlocsDuFil.Intervalles[0];
                 s_images = 0;
                 s_enfants = 0;
-                s_ticksDesEntites = 0;
+                s_chronometre.Prendre(null);
                 s_debutDeLaMinute = DateTime.UtcNow;
                 s_debutDeLaMinuteTicks = Stopwatch.GetTimestamp();
                 Releve.Oublier();
@@ -803,10 +922,10 @@ namespace SirCorrectifsPulsar
                 return;
             try
             {
-                Releve.Image(s_echantillon, s_ticksDesEntites);
+                var ticksDesEntites = s_chronometre.Prendre(s_ticksDesEtapes);
+                Releve.Image(s_echantillon, ticksDesEntites, s_ticksDesEtapes);
                 Releve.Cout(s_cout);
                 s_cout = 0;
-                s_ticksDesEntites = 0;
                 s_enfants = 0;
 
                 var maintenant = DateTime.UtcNow;
@@ -843,8 +962,7 @@ namespace SirCorrectifsPulsar
             s_echantillon = false;
             s_enfants = 0;
             s_cout = 0;
-            s_ticksDesEntites = 0;
-            s_debutDesEntites = 0;
+            s_chronometre.Prendre(null);
             Releve.Oublier();
             s_typesDesBlocs.Clear();
             s_typesDesEntites.Clear();

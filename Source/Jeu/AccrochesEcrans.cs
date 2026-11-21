@@ -79,7 +79,6 @@ namespace SirCorrectifsPulsar
             public bool Fonctionnel;
             public bool ObjetDeRenduPret;
             public int CalculAvant;
-            public long Debut;
             public double Distance;
 
             // Le dernier calcul du script chez le joueur.
@@ -166,9 +165,21 @@ namespace SirCorrectifsPulsar
                 return;
             }
 
-            s_miseAJour = Accroches.Poser(harmony, Suivi.Ecrans, "mise à jour d'un écran",
+            // La mise à jour d'un écran est chronométrée (la durée du calcul) :
+            // son appel est encadré là où le jeu le fait, jamais par un préfixe
+            // et un suffixe sur la méthode elle-même. Trois appelants, lus dans
+            // le jeu : le panneau toutes les 10 images et à ses changements
+            // (courant, modèle), et les écrans d'un bloc qui en porte plusieurs
+            // (cockpit, bloc programmable…).
+            s_miseAJour = Accroches.Encadrer(harmony, Suivi.Ecrans, "mise à jour d'un écran",
                 () => Accroches.Methode(typeof(MyTextPanelComponent), "UpdateAfterSimulation", typeof(bool), typeof(bool)),
-                "AvantLaMiseAJour", "ApresLaMiseAJour", moi);
+                () => new MethodBase[]
+                {
+                    Accroches.Methode(typeof(MyTextPanel), "UpdateAfterSimulation10"),
+                    Accroches.Methode(typeof(MyTextPanel), "UpdateScreen"),
+                    Accroches.Methode(typeof(MyMultiTextPanelComponent), "UpdateScreen"),
+                },
+                "EncadrerLaMiseAJour", moi);
             s_reception = Accroches.Poser(harmony, Suivi.Ecrans, "morceaux reçus du serveur",
                 () => Accroches.Methode(typeof(MyTextPanelComponent), "m_externalSprites_ValueChanged"),
                 "MorceauxRecus", null, moi);
@@ -243,16 +254,33 @@ namespace SirCorrectifsPulsar
 
         // ---- Avant / après la mise à jour du jeu ----------------------------
 
-        private static void AvantLaMiseAJour(MyTextPanelComponent __instance, bool isWorking, bool isInRange)
+        // L'appel que le jeu fait de la mise à jour d'un écran, fait ici à sa
+        // place, exactement une fois et avec les mêmes arguments. Un écran
+        // suivi est regardé avant et après, et l'appel chronométré entre deux
+        // lectures de l'horloge. Une exception du jeu passe telle quelle.
+        public static void EncadrerLaMiseAJour(MyTextPanelComponent panneau, bool isWorking, bool isInRange)
         {
-            if (!Collecte.Actif)
+            var ecran = panneau == null || !Collecte.Actif ? null : AvantLaMiseAJour(panneau, isWorking, isInRange);
+            if (ecran == null)
+            {
+                panneau.UpdateAfterSimulation(isWorking, isInRange);
                 return;
+            }
+            var debut = Stopwatch.GetTimestamp();
+            panneau.UpdateAfterSimulation(isWorking, isInRange);
+            var fin = Stopwatch.GetTimestamp();
+            ApresLaMiseAJour(panneau, ecran, Collecte.Millisecondes(debut, fin));
+        }
+
+        // L'écran, s'il est suivi pour cette mise à jour ; sinon nul.
+        private static Ecran AvantLaMiseAJour(MyTextPanelComponent __instance, bool isWorking, bool isInRange)
+        {
             try
             {
                 var bloc = s_bloc(__instance);
                 var camera = MySector.MainCamera;
                 if (bloc == null || camera == null)
-                    return;
+                    return null;
                 s_miseAJour.Compter();
                 var ecran = s_ecrans.GetValue(__instance, c => new Ecran());
                 ecran.AvantSuivi = false;
@@ -266,7 +294,7 @@ namespace SirCorrectifsPulsar
                 {
                     if (ecran.Demande != null)
                         OublierLEcran(ecran);
-                    return;
+                    return null;
                 }
 
                 ecran.AvantSuivi = true;
@@ -277,11 +305,12 @@ namespace SirCorrectifsPulsar
                 var rendu = s_rendu(__instance);
                 ecran.ObjetDeRenduPret = rendu != null && rendu.IsRenderObjectAssigned(s_objetDeRendu(__instance));
                 ecran.CalculAvant = s_dernierCalcul(__instance);
-                ecran.Debut = Stopwatch.GetTimestamp();
+                return ecran;
             }
             catch (Exception e)
             {
                 Fautes.Noter("avant la mise à jour d'un écran", e);
+                return null;
             }
         }
 
@@ -309,23 +338,20 @@ namespace SirCorrectifsPulsar
             }
         }
 
-        private static void ApresLaMiseAJour(MyTextPanelComponent __instance)
+        // Après la mise à jour du jeu, avec sa durée.
+        private static void ApresLaMiseAJour(MyTextPanelComponent __instance, Ecran ecran, double dureeMs)
         {
-            if (!Collecte.Actif)
-                return;
-            Ecran ecran;
-            if (!s_ecrans.TryGetValue(__instance, out ecran) || !ecran.AvantSuivi)
+            if (!ecran.AvantSuivi)
                 return;
             try
             {
                 ecran.AvantSuivi = false;
-                var fin = Stopwatch.GetTimestamp();
                 var maintenant = DateTime.UtcNow;
                 var calcul = s_dernierCalcul(__instance);
                 if (calcul != ecran.CalculAvant && calcul != 0)
                 {
                     ecran.DernierCalcul = maintenant;
-                    ecran.DureeDuCalcul = Collecte.Millisecondes(ecran.Debut, fin);
+                    ecran.DureeDuCalcul = dureeMs;
                 }
 
                 var dans32m = ecran.Distance <= PorteeDesEcrans.RayonDesMorceaux;

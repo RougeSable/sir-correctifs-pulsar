@@ -130,6 +130,7 @@ namespace SirCorrectifsPulsar
         private int m_images;
         private int m_imagesMesurees;
         private long m_ticksDesEntites;
+        private readonly long[] m_ticksDesEtapes = new long[EtapesDeLOrchestrateur.Toutes.Length];
         private long m_ticksDeLaMesure;
         private long m_appels;
 
@@ -204,12 +205,26 @@ namespace SirCorrectifsPulsar
         // des entités de cette image.
         public void Image(bool mesuree, long ticksDesEntites)
         {
+            Image(mesuree, ticksDesEntites, null);
+        }
+
+        // La même, avec le temps de chacune des quatre étapes de
+        // l'orchestrateur (dans l'ordre de EtapesDeLOrchestrateur.Toutes).
+        public void Image(bool mesuree, long ticksDesEntites, long[] ticksDesEtapes)
+        {
             m_images++;
             if (!mesuree)
                 return;
             m_imagesMesurees++;
             if (ticksDesEntites > 0)
                 m_ticksDesEntites += ticksDesEntites;
+            if (ticksDesEtapes == null)
+                return;
+            for (var i = 0; i < m_ticksDesEtapes.Length && i < ticksDesEtapes.Length; i++)
+            {
+                if (ticksDesEtapes[i] > 0)
+                    m_ticksDesEtapes[i] += ticksDesEtapes[i];
+            }
         }
 
         // Ce que la mesure a coûté elle-même, en ticks.
@@ -228,6 +243,7 @@ namespace SirCorrectifsPulsar
             m_images = 0;
             m_imagesMesurees = 0;
             m_ticksDesEntites = 0;
+            Array.Clear(m_ticksDesEtapes, 0, m_ticksDesEtapes.Length);
             m_ticksDeLaMesure = 0;
             m_appels = 0;
         }
@@ -266,6 +282,8 @@ namespace SirCorrectifsPulsar
             champs.Entier("images_mesurees", m_imagesMesurees);
             champs.Entier("intervalle", intervalle);
             champs.Nombre("temps_des_entites_ms", Ms(m_ticksDesEntites), 3);
+            foreach (var etape in EtapesDeLOrchestrateur.Toutes)
+                champs.Nombre(etape.Champ, Ms(m_ticksDesEtapes[etape.Numero]), 3);
             champs.Nombre("temps_attribue_ms", Ms(ticksAttribues), 3);
             champs.Entier("types", m_vus.Count);
             champs.Entier("types_non_ecrits", m_vus.Count - ecrits);
